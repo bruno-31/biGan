@@ -2,7 +2,7 @@ import os
 import time
 import numpy as np
 import tensorflow as tf
-import mnist_gan
+import bi_mnist
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -13,10 +13,9 @@ flags.DEFINE_integer('seed', 146, 'seed')
 flags.DEFINE_integer('seed_data', 646, 'seed data')
 flags.DEFINE_integer('seed_tf', 646, 'tf random seed')
 flags.DEFINE_integer('labeled', 10, 'labeled image per class[100]')
-flags.DEFINE_float('learning_rate_d', 0.003, 'learning_rate dis[0.003]')
-flags.DEFINE_float('learning_rate_g', 0.003, 'learning_rate gen[0.003]')
-flags.DEFINE_float('unl_weight', 1, 'unlabeled weight [1.]')
-flags.DEFINE_float('lbl_weight', 1, 'labeled weight [1.]')
+flags.DEFINE_float('learning_rate', 0.0003, 'learning_rate dis[0.0003]')
+
+
 FREQ_PRINT = 1000
 FLAGS._parse_flags()
 print("\nParameters:")
@@ -44,102 +43,67 @@ def main(_):
     testy = data['y_test'].astype(np.int32)
     nr_batches_test = int(testx.shape[0] / FLAGS.batch_size)
 
-    # select labeled data
-    inds = rng_data.permutation(trainx.shape[0])
-    trainx = trainx[inds]
-    trainy = trainy[inds]
-    txs = []
-    tys = []
-    for j in range(10):
-        txs.append(trainx[trainy == j][:FLAGS.labeled])
-        tys.append(trainy[trainy == j][:FLAGS.labeled])
-    txs = np.concatenate(txs, axis=0)
-    tys = np.concatenate(tys, axis=0)
-
-    print('labeled digits : ', len(tys))
-
 
     '''construct graph'''
     print('constructing graph')
-    inp = tf.placeholder(tf.float32, [FLAGS.batch_size, 28 * 28], name='labeled_data_input_pl')
-    unl = tf.placeholder(tf.float32, [FLAGS.batch_size, 28 * 28], name='unlabeled_data_input_pl')
-    lbl = tf.placeholder(tf.int32, [FLAGS.batch_size], name='lbl_input_pl')
+    inp = tf.placeholder(tf.float32, [FLAGS.batch_size, 28 * 28], name='unlabeled_data_input_pl')
     is_training_pl = tf.placeholder(tf.bool, [], name='is_training_pl')
-    acc_train_pl = tf.placeholder(tf.float32, [], 'acc_train_pl')
-    acc_test_pl = tf.placeholder(tf.float32, [], 'acc_test_pl')
 
-    gen = mnist_gan.generator
-    dis = mnist_gan.discriminator
+    gen = bi_mnist.generator
+    enc = bi_mnist.decoder
+    dis = bi_mnist.discriminator
 
     with tf.variable_scope('generator_model'):
-        gen_inp = gen(batch_size=FLAGS.batch_size, is_training=is_training_pl)
+        z = tf.random_uniform([128])
+        x_gen = gen(z, is_training=is_training_pl)
+
+    with tf.variable_scope('encoder_model'):
+        z_gen = enc(inp, is_training=is_training_pl)
 
     with tf.variable_scope('discriminator_model') as scope:
-        init_weight_op, _ = dis(inp, is_training_pl, True)
+        l_encoder = dis(z_gen,inp, is_training=is_training_pl)
         scope.reuse_variables()
-        logits_lab, _ = dis(inp, is_training_pl)
-        logits_unl, layer_real = dis(unl, is_training_pl)
-        logits_gen, layer_fake = dis(gen_inp, is_training_pl)
+        l_generator = dis(z,x_gen, is_training=is_training_pl)
 
-    with tf.variable_scope("model_test") as test_scope:
-        _,_ = dis(inp, is_training_pl,True)
-        test_scope.reuse_variables()
-        logits_test, _ = dis(inp, is_training_pl, False)
 
     with tf.name_scope('loss_functions'):
-        # Improved gan, T. Salimans
-        # DISCRIMINATOR
-        z_exp_lab = tf.reduce_mean(tf.reduce_logsumexp(logits_lab, axis=1))
-        rg = tf.cast(tf.range(0,FLAGS.batch_size), tf.int32)
-        idx = tf.stack([rg,lbl], axis=1)
-        l_lab = tf.gather_nd(logits_lab, idx)
-        loss_lab = -tf.reduce_mean(l_lab)+z_exp_lab
+        # discriminator
+        loss_dis_enc = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(l_encoder),logits=l_encoder)
+        loss_dis_gen = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_generator),logits=l_generator)
+        loss_discriminator = loss_dis_gen + loss_dis_enc
 
-        l_unl = tf.reduce_logsumexp(logits_unl,axis=1)
-        d = tf.reduce_mean(tf.nn.softplus(tf.reduce_logsumexp(logits_unl,axis=1)), axis=0) + \
-            tf.reduce_mean(tf.nn.softplus(tf.reduce_logsumexp(logits_gen,axis=1)), axis=0)
-        loss_unl = -0.5*tf.reduce_mean(l_unl) + 0.5*d
+        # generator
+        loss_generator = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(l_generator),logits=l_generator)
 
-        loss_dis = FLAGS.unl_weight * loss_unl + FLAGS.lbl_weight * loss_lab
+        # encoder
+        loss_generator = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_encoder),logits=l_encoder)
 
-        accuracy_dis_unl = tf.reduce_mean(tf.cast(tf.greater(logits_unl, 0), tf.float32))
-        accuracy_dis_gen = tf.reduce_mean(tf.cast(tf.less(logits_gen, 0), tf.float32))
-        accuracy_dis = 0.5 * accuracy_dis_unl + 0.5* accuracy_dis_gen
-
-        correct_pred = tf.equal(tf.cast(tf.argmax(logits_lab, 1), tf.int32), tf.cast(lbl, tf.int32))
-        accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-        correct_pred_test = tf.equal(tf.cast(tf.argmax(logits_test, 1), tf.int32), tf.cast(lbl, tf.int32))
-        accuracy_test = tf.reduce_mean(tf.cast(correct_pred_test, tf.float32))
-        # GENERATOR
-        m1 = tf.reduce_mean(layer_real, axis=0)
-        m2 = tf.reduce_mean(layer_fake, axis=0)
-        loss_gen =  tf.reduce_mean(tf.square(m1-m2))
-        fool_rate = tf.reduce_mean(tf.cast(tf.greater(logits_gen, 0), tf.float32))
 
     with tf.name_scope('optimizers'):
         # control op dependencies for batch norm and trainable variables
         tvars = tf.trainable_variables()
         dvars = [var for var in tvars if 'discriminator_model' in var.name]
         gvars = [var for var in tvars if 'generator_model' in var.name]
-        testvars = [var for var in tvars if 'model_test' in var.name]
+        evars = [var for var in tvars if 'encoder_model' in var.name]
+
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         update_ops_gen = [x for x in update_ops if ('generator_model' in x.name)]
+        update_ops_en = [x for x in update_ops if ('encoder_model' in x.name)]
         update_ops_dis = [x for x in update_ops if ('discriminator_model' in x.name)]
 
-        optimizer_dis = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate_d, beta1=0.5, name='dis_optimizer')
-        optimizer_gen = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate_g, beta1=0.5, name='gen_optimizer')
-
-        train_dis_op = optimizer_dis.minimize(loss_dis, var_list=dvars)
-        ema = tf.train.ExponentialMovingAverage(decay=0.9999)
-        maintain_averages_op = ema.apply(dvars)
-
-        with tf.control_dependencies([train_dis_op]):
-                training_op = tf.group(maintain_averages_op)
-
-        copy_graph = [tf.assign(x,ema.average(y)) for x,y in zip(testvars,dvars)]
+        optimizer_dis = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5, name='dis_optimizer')
+        optimizer_gen = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5, name='gen_optimizer')
+        optimizer_enc = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5, name='enc_optimizer')
 
         with tf.control_dependencies(update_ops_gen):
-            train_gen_op = optimizer_gen.minimize(loss_gen, var_list=gvars)
+            train_gen_op = optimizer_gen.minimize(loss_generator, var_list=gvars)
+
+        with tf.control_dependencies(update_ops_enc):
+            train_enc_op = optimizer_gen.minimize(loss_generator, var_list=evars)
+
+        with tf.control_dependencies(update_ops_dis):
+            train_dis_op = optimizer_gen.minimize(loss_generator, var_list=dvars)
+
 
 
     '''//////perform training //////'''
