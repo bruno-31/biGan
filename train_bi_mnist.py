@@ -35,9 +35,8 @@ def main(_):
     # Random seed
     rng = np.random.RandomState(FLAGS.seed)  # seed labels
     rng_data = np.random.RandomState(FLAGS.seed_data)  # seed shuffling
-    tf.set_random_seed(FLAGS.seed_tf)
     print('loading data')
-    data = np.load('../data/mnist.npz')
+    data = np.load('./mnist.npz')
     trainx = np.concatenate([data['x_train'], data['x_valid']], axis=0).astype(np.float32)
     trainx_2 = trainx.copy()
     nr_batches_train = int(trainx.shape[0] / FLAGS.batch_size)
@@ -47,15 +46,15 @@ def main(_):
     inp = tf.placeholder(tf.float32, [FLAGS.batch_size, 28 * 28], name='unlabeled_data_input_pl')
     is_training_pl = tf.placeholder(tf.bool, [], name='is_training_pl')
 
-    gen = bi_mnist.generator
-    enc = bi_mnist.decoder
+    gen = bi_mnist.decoder
+    enc = bi_mnist.encoder
     dis = bi_mnist.discriminator
 
     with tf.variable_scope('encoder_model'):
         z_gen = enc(inp, is_training=is_training_pl)
 
     with tf.variable_scope('generator_model') as scope:
-        z = tf.random_uniform([128])
+        z = tf.random_uniform([FLAGS.batch_size, 256])
         x_gen = gen(z, is_training=is_training_pl)
         scope.reuse_variables()
         reconstruct = gen(z_gen, is_training=is_training_pl)  # reconstruction image dataset though bottleneck
@@ -111,8 +110,8 @@ def main(_):
             tf.summary.scalar('loss_encoder', loss_encoder, ['gen'])
 
         with tf.name_scope('image_summary'):
-            tf.summary.image('gen_digits', reconstruct, 20, ['image'])
-            tf.summary.image('input_images', tf.reshape(inp, [-1,28,28]), 1, ['image'])
+            tf.summary.image('reconstruct', reconstruct, 20, ['image'])
+            tf.summary.image('input_images', tf.reshape(inp, [-1,28,28]), 20, ['image'])
 
         sum_op_dis = tf.summary.merge_all('dis')
         sum_op_gen = tf.summary.merge_all('gen')
