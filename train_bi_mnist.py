@@ -32,17 +32,10 @@ def main(_):
     rng_data = np.random.RandomState(FLAGS.seed_data)  # seed shuffling
     tf.set_random_seed(FLAGS.seed_tf)
     print('loading data')
-    # load MNIST data
     data = np.load('../data/mnist.npz')
     trainx = np.concatenate([data['x_train'], data['x_valid']], axis=0).astype(np.float32)
-    trainx_unl = trainx.copy()
-    trainx_unl2 = trainx.copy()
-    trainy = np.concatenate([data['y_train'], data['y_valid']]).astype(np.int32)
+    trainx_2 = trainx.copy()
     nr_batches_train = int(trainx.shape[0] / FLAGS.batch_size)
-    testx = data['x_test'].astype(np.float32)
-    testy = data['y_test'].astype(np.int32)
-    nr_batches_test = int(testx.shape[0] / FLAGS.batch_size)
-
 
     '''construct graph'''
     print('constructing graph')
@@ -76,7 +69,7 @@ def main(_):
         loss_generator = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(l_generator),logits=l_generator)
 
         # encoder
-        loss_generator = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_encoder),logits=l_encoder)
+        loss_encoder = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_encoder),logits=l_encoder)
 
 
     with tf.name_scope('optimizers'):
@@ -88,7 +81,7 @@ def main(_):
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         update_ops_gen = [x for x in update_ops if ('generator_model' in x.name)]
-        update_ops_en = [x for x in update_ops if ('encoder_model' in x.name)]
+        update_ops_enc = [x for x in update_ops if ('encoder_model' in x.name)]
         update_ops_dis = [x for x in update_ops if ('discriminator_model' in x.name)]
 
         optimizer_dis = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate, beta1=0.5, name='dis_optimizer')
@@ -99,90 +92,53 @@ def main(_):
             train_gen_op = optimizer_gen.minimize(loss_generator, var_list=gvars)
 
         with tf.control_dependencies(update_ops_enc):
-            train_enc_op = optimizer_gen.minimize(loss_generator, var_list=evars)
+            train_enc_op = optimizer_gen.minimize(loss_encoder, var_list=evars)
 
         with tf.control_dependencies(update_ops_dis):
-            train_dis_op = optimizer_gen.minimize(loss_generator, var_list=dvars)
-
+            train_dis_op = optimizer_gen.minimize(loss_discriminator, var_list=dvars)
 
 
     '''//////perform training //////'''
     print('start training')
     with tf.Session() as sess:
         init = tf.global_variables_initializer()
-        #Data-Dependent Initialization of Parameters as discussed in DP Kingma and Salimans Paper
-        sess.run(init, feed_dict={inp: trainx_unl[0:FLAGS.batch_size], is_training_pl: True})
+        sess.run(init)
         print('initialization done')
 
-        writer = tf.summary.FileWriter(FLAGS.logdir, sess.graph)
         train_batch = 0
+
         for epoch in range(200):
             begin = time.time()
 
             # construct randomly permuted minibatches
-            trainx = []
-            trainy = []
-            for t in range(int(np.ceil(trainx_unl.shape[0] / float(txs.shape[0])))):  # same size lbl and unlb
-                inds = rng.permutation(txs.shape[0])
-                trainx.append(txs[inds])
-                trainy.append(tys[inds])
-            trainx = np.concatenate(trainx, axis=0)
-            trainy = np.concatenate(trainy, axis=0)
-            trainx_unl = trainx_unl[rng.permutation(trainx_unl.shape[0])]  # shuffling unl dataset
-            trainx_unl2 = trainx_unl2[rng.permutation(trainx_unl2.shape[0])]
+            trainx = trainx[rng.permutation(trainx.shape[0])]  # shuffling unl dataset
+            trainx_2 = trainx[rng.permutation(trainx.shape[0])]
 
-            train_loss_lab, train_loss_unl, train_loss_gen, train_acc, test_acc = [ 0, 0, 0, 0, 0]
+            train_loss_dis, train_loss_gen, train_loss_enc = [ 0, 0, 0]
             # training
             for t in range(nr_batches_train):
                 ran_from = t * FLAGS.batch_size
                 ran_to = (t + 1) * FLAGS.batch_size
 
                 # train discriminator
-                feed_dict = {inp: trainx[ran_from:ran_to],
-                             lbl: trainy[ran_from:ran_to],
-                             unl: trainx_unl[ran_from:ran_to],
-                             is_training_pl: True}
-                _, ll, lu, acc, sm = sess.run([training_op, loss_lab, loss_unl, accuracy, sum_op_dis],
-                                              feed_dict=feed_dict)
-                train_loss_lab += ll
-                train_loss_unl += lu
-                train_acc += acc
-                writer.add_summary(sm, train_batch)
+                feed_dict = {inp: trainx[ran_from:ran_to],is_training_pl: True}
+                _, ld = sess.run([train_dis_op, loss_discriminator], feed_dict=feed_dict)
+                train_loss_dis += ld
 
-                # train generator
-                _, lg, sm = sess.run([train_gen_op, loss_gen, sum_op_gen], feed_dict={unl: trainx_unl2[ran_from:ran_to],
-                                                                                      is_training_pl: True})
+                # train generator and encoder
+                feed_dict = {inp: trainx_2[ran_from:ran_to],is_training_pl: True}
+                _, lg, le = sess.run([train_gen_op, train_enc_op, loss_encoder, loss_generator], feed_dict=feed_dict)
                 train_loss_gen += lg
-                writer.add_summary(sm, train_batch)
+                train_loss_enc += le
 
-                if t % FREQ_PRINT == 0:
-                    sm = sess.run(sum_op_im, feed_dict={is_training_pl: False})
-                    writer.add_summary(sm, train_batch)
                 train_batch += 1
-            train_loss_lab /= nr_batches_train
-            train_loss_unl /= nr_batches_train
-            train_acc /= nr_batches_train
+            train_loss_gen /= nr_batches_train
+            train_loss_enc /= nr_batches_train
+            train_loss_dis /= nr_batches_train
 
-            # Testing
-            sess.run(copy_graph)
-            for t in range(nr_batches_test):
-                ran_from = t * FLAGS.batch_size
-                ran_to = (t + 1) * FLAGS.batch_size
-                feed_dict = {inp: testx[ran_from:ran_to],
-                             lbl: testy[ran_from:ran_to],
-                             is_training_pl: False}
-                test_acc += sess.run(accuracy_test, feed_dict=feed_dict)
 
-            test_acc /= nr_batches_test
-
-            # Plotting
-            sum = sess.run(sum_op_epoch, feed_dict={acc_train_pl: train_acc,
-                                                    acc_test_pl: test_acc})
-            writer.add_summary(sum, epoch)
-
-            print("Epoch %d--Time = %ds | loss gen = %.4f | loss lab = %.4f | loss unl = %.4f "
-                  "| train acc = %.4f| test acc = %.4f"
-                  % (epoch, time.time() - begin, train_loss_gen, train_loss_lab, train_loss_unl, train_acc, test_acc))
+            print("Epoch %d--Time = %ds | loss gen = %.4f | loss enc = %.4f | loss dis = %.4f "
+                  % (epoch, time.time() - begin, train_loss_gen, train_loss_enc, train_loss_dis))
 
 if __name__ == '__main__':
     tf.app.run()
