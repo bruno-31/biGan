@@ -25,7 +25,9 @@ def _leakyReLu_impl(x, alpha):
 
 def discriminator(inp,z, is_training):
     #D(x)
-    x=tf.layers.conv2d(inp, 32,[3,3],padding='SAME')
+    x = tf.reshape(inp, [-1, 28 ,28, 1])
+
+    x=tf.layers.conv2d(x, 32,[3,3],padding='SAME')
 
     x=tf.layers.conv2d(x, 64,[3,3],padding='SAME',strides=[2,2]) #14*14
     x=tf.layers.batch_normalization(x, is_training)
@@ -63,6 +65,8 @@ def discriminator(inp,z, is_training):
 
 def encoder(inp, is_training):
     # D(x)
+    x = tf.reshape(inp, [-1, 28 ,28, 1])
+
     x = tf.layers.conv2d(inp, 32, [3, 3], padding='SAME')
 
     x = tf.layers.conv2d(x, 64, [3, 3], padding='SAME', strides=[2, 2])
@@ -82,11 +86,11 @@ def decoder(z, batch_size,is_training):
     x = tf.layers.batch_normalization(x, is_training)
     x = leakyReLu(x)
 
-    x = tf.layers.conv2d_transpose(z, 64, [4, 4], strides=[2,2])
+    x = tf.layers.conv2d_transpose(x, 64, [4, 4], strides=[2,2])
     x = tf.layers.batch_normalization(x, is_training)
     x = leakyReLu(x)
 
-    x = tf.layers.conv2d_transpose(z, 32, [4, 4])
+    x = tf.layers.conv2d_transpose(x, 32, [4, 4])
     x = tf.layers.batch_normalization(x, is_training)
     x = leakyReLu(x)
 
