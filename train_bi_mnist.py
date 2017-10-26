@@ -31,7 +31,6 @@ def display_progression_epoch(j, id_max):
 def main(_):
     if not os.path.exists(FLAGS.logdir):
         os.mkdir(FLAGS.logdir)
-
     # Random seed
     rng = np.random.RandomState(FLAGS.seed)  # seed labels
     rng_data = np.random.RandomState(FLAGS.seed_data)  # seed shuffling

@@ -71,7 +71,6 @@ def discriminator(z, inp, is_training):
 
 
 def encoder(inp, is_training):
-    # D(x)
     x = tf.reshape(inp, [-1, 28, 28, 1])
 
     x = tf.layers.conv2d(x, 32, [3, 3], padding='SAME')
@@ -99,18 +98,19 @@ def decoder(z, is_training):
     x = tf.reshape(x, [-1, 3, 3, 512])
 
     with tf.variable_scope('deconv_1'):
-        x = tf.layers.conv2d_transpose(x, 256, [5, 5], strides=[2, 2], padding='SAME', kernel_initializer=init_kernel)
+        x = tf.layers.conv2d_transpose(x, 256, [3, 3], strides=[2, 2], padding='VALID', kernel_initializer=init_kernel)
         x = tf.layers.batch_normalization(x, training=is_training, name='batchnorm_2')
         x = tf.nn.relu(x)
-
+    print(x)
     with tf.variable_scope('deconv_2'):
         x = tf.layers.conv2d_transpose(x, 128, [5, 5], strides=[2, 2], padding='SAME', kernel_initializer=init_kernel)
         x = tf.layers.batch_normalization(x, training=is_training, name='batchnormn_3')
         x = tf.nn.relu(x)
     # including weightnorm     # [batch,32,32,3]
     with tf.variable_scope('deconv_3'):
-        x = tf.layers.conv2d_transpose(x, 128, [5, 5], strides=[2, 2], padding='VALID', kernel_initializer=init_kernel,
+        x = tf.layers.conv2d_transpose(x, 128, [5, 5], strides=[2, 2], padding='SAME', kernel_initializer=init_kernel,
                                        activation=tf.tanh)
     print("generatewefefw")
     print(x)
+
     return x
