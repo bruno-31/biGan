@@ -66,13 +66,13 @@ def main(_):
 
     with tf.name_scope('loss_functions'):
         # discriminator
-        loss_dis_enc = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(l_encoder),logits=l_encoder)
-        loss_dis_gen = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_generator),logits=l_generator)
+        loss_dis_enc = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(l_encoder),logits=l_encoder))
+        loss_dis_gen = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_generator),logits=l_generator))
         loss_discriminator = loss_dis_gen + loss_dis_enc
         # generator
-        loss_generator = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(l_generator),logits=l_generator)
+        loss_generator = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(l_generator),logits=l_generator))
         # encoder
-        loss_encoder = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_encoder),logits=l_encoder)
+        loss_encoder = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(l_encoder),logits=l_encoder))
 
 
     with tf.name_scope('optimizers'):
@@ -101,7 +101,7 @@ def main(_):
     with tf.name_scope('summary'):
         with tf.name_scope('dis_summary'):
             tf.summary.scalar('loss_discriminator', loss_discriminator, ['dis'])
-            tf.summary.scalar('discriminator_accuracy', loss_dis_enc, ['dis'])
+            tf.summary.scalar('loss_encoder', loss_dis_enc, ['dis'])
             tf.summary.scalar('loss_discriminator', loss_dis_gen, ['dis'])
 
         with tf.name_scope('gen_summary'):
@@ -110,7 +110,7 @@ def main(_):
 
         with tf.name_scope('image_summary'):
             tf.summary.image('reconstruct', reconstruct, 20, ['image'])
-            tf.summary.image('input_images', tf.reshape(inp, [-1,28,28]), 20, ['image'])
+            tf.summary.image('input_images', tf.reshape(inp, [-1,28,28,1]), 20, ['image'])
 
         sum_op_dis = tf.summary.merge_all('dis')
         sum_op_gen = tf.summary.merge_all('gen')
@@ -139,6 +139,7 @@ def main(_):
             train_loss_dis, train_loss_gen, train_loss_enc = [ 0, 0, 0]
             # training
             for t in range(nr_batches_train):
+                display_progression_epoch(t,nr_batches_train)
                 ran_from = t * FLAGS.batch_size
                 ran_to = (t + 1) * FLAGS.batch_size
 
@@ -150,13 +151,16 @@ def main(_):
 
                 # train generator and encoder
                 feed_dict = {inp: trainx_2[ran_from:ran_to],is_training_pl: True}
-                _, lg, le, sm = sess.run([train_gen_op, train_enc_op, loss_encoder, loss_generator, sum_op_gen], feed_dict=feed_dict)
+                _,_, lg, le, sm = sess.run([train_gen_op, train_enc_op, loss_encoder, loss_generator, sum_op_gen], feed_dict=feed_dict)
                 train_loss_gen += lg
                 train_loss_enc += le
                 writer.add_summary(sm, train_batch)
 
                 if t % FLAGS.freq_print == 0:  # inspect reconstruction
-                    sm = sess.run(sum_op_im, feed_dict={is_training_pl: False})
+                    t= np.random.randint(0,4000)
+                    ran_from = t
+                    ran_to = t + FLAGS.batch_size
+                    sm = sess.run(sum_op_im, feed_dict={inp: trainx[ran_from:ran_to],is_training_pl: False})
                     writer.add_summary(sm, train_batch)
 
                 train_batch += 1
