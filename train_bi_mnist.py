@@ -101,16 +101,16 @@ def main(_):
     with tf.name_scope('summary'):
         with tf.name_scope('dis_summary'):
             tf.summary.scalar('loss_discriminator', loss_discriminator, ['dis'])
-            tf.summary.scalar('loss_encoder', loss_dis_enc, ['dis'])
-            tf.summary.scalar('loss_discriminator', loss_dis_gen, ['dis'])
+            tf.summary.scalar('loss_dis_encoder', loss_dis_enc, ['dis'])
+            tf.summary.scalar('loss_dis_gen', loss_dis_gen, ['dis'])
 
         with tf.name_scope('gen_summary'):
             tf.summary.scalar('loss_generator', loss_generator, ['gen'])
             tf.summary.scalar('loss_encoder', loss_encoder, ['gen'])
 
         with tf.name_scope('image_summary'):
-            tf.summary.image('reconstruct', reconstruct, 20, ['image'])
-            tf.summary.image('input_images', tf.reshape(inp, [-1,28,28,1]), 20, ['image'])
+            tf.summary.image('reconstruct', reconstruct, 10, ['image'])
+            tf.summary.image('input_images', tf.reshape(inp, [-1,28,28,1]), 10, ['image'])
 
         sum_op_dis = tf.summary.merge_all('dis')
         sum_op_gen = tf.summary.merge_all('gen')
@@ -170,7 +170,7 @@ def main(_):
             train_loss_dis /= nr_batches_train
 
 
-            print("Epoch %d--Time = %ds | loss gen = %.4f | loss enc = %.4f | loss dis = %.4f "
+            print("Epoch %d | time = %ds | loss gen = %.4f | loss enc = %.4f | loss dis = %.4f "
                   % (epoch, time.time() - begin, train_loss_gen, train_loss_enc, train_loss_dis))
 
 if __name__ == '__main__':
