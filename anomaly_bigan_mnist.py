@@ -16,7 +16,7 @@ flags.DEFINE_string('logdir', './log', 'log directory')
 flags.DEFINE_integer('seed', 146, 'seed')
 flags.DEFINE_integer('seed_data', 646, 'seed data')
 flags.DEFINE_integer('freq_print', 20, 'print frequency image tensorboard [20]')
-flags.DEFINE_float('learning_rate', 0.0003, 'learning_rate dis[0.0003]')
+flags.DEFINE_float('learning_rate', 0.0001, 'learning_rate dis[0.0003]')
 flags.DEFINE_integer('train_digit', 1, 'gan is train on this digit [1]')
 
 
@@ -74,7 +74,7 @@ def main(_):
         z_gen = enc(inp, is_training=is_training_pl)
 
     with tf.variable_scope('generator_model') as scope:
-        z = tf.random_uniform([FLAGS.batch_size, 256])
+        z = tf.random_normal([FLAGS.batch_size, 256])
         x_gen = gen(z, is_training=is_training_pl)
         scope.reuse_variables()
         reconstruct = gen(z_gen, is_training=is_training_pl)  # reconstruction image dataset though bottleneck
